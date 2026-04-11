@@ -1,0 +1,86 @@
+{
+    "accuracy": 0.8908386635857249,
+    "precision_macro": 0.37992170569429745,
+    "precision_weighted": 0.904631412055073,
+    "recall_macro": 0.4061060314233214,
+    "recall_weighted": 0.8908386635857249,
+    "f1_macro": 0.3731846253588357,
+    "f1_weighted": 0.8949888314797108,
+    "per_class": {
+        "Benign": {
+            "precision": 0.9994113846816453,
+            "recall": 0.9713671755086094,
+            "f1-score": 0.9851897453315501,
+            "support": 71666.0
+        },
+        "Analysis": {
+            "precision": 0.2323943661971831,
+            "recall": 0.42857142857142855,
+            "f1-score": 0.3013698630136986,
+            "support": 77.0
+        },
+        "Backdoor": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1-score": 0.0,
+            "support": 90.0
+        },
+        "DoS": {
+            "precision": 0.3014705882352941,
+            "recall": 0.04586129753914989,
+            "f1-score": 0.0796116504854369,
+            "support": 894.0
+        },
+        "Exploits": {
+            "precision": 0.6761055759482608,
+            "recall": 0.6248788368336026,
+            "f1-score": 0.6494836705566283,
+            "support": 6190.0
+        },
+        "Fuzzers": {
+            "precision": 0.44029401132666585,
+            "recall": 0.6169171028195172,
+            "f1-score": 0.5138517789340459,
+            "support": 5923.0
+        },
+        "Generic": {
+            "precision": 0.27025641025641023,
+            "recall": 0.5685005393743258,
+            "f1-score": 0.3663538408063955,
+            "support": 927.0
+        },
+        "Reconnaissance": {
+            "precision": 0.5861251111769937,
+            "recall": 0.5906782193008665,
+            "f1-score": 0.5883928571428572,
+            "support": 3347.0
+        },
+        "Shellcode": {
+            "precision": 0.2931596091205212,
+            "recall": 0.21428571428571427,
+            "f1-score": 0.24759284731774414,
+            "support": 420.0
+        },
+        "Worms": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1-score": 0.0,
+            "support": 49.0
+        },
+        "accuracy": 0.8908386635857249,
+        "macro avg": {
+            "precision": 0.37992170569429745,
+            "recall": 0.4061060314233214,
+            "f1-score": 0.3731846253588357,
+            "support": 89583.0
+        },
+        "weighted avg": {
+            "precision": 0.904631412055073,
+            "recall": 0.8908386635857249,
+            "f1-score": 0.8949888314797108,
+            "support": 89583.0
+        }
+    },
+    "matthews_corrcoef": 0.7035960807851238,
+    "cohen_kappa": 0.7015519712050959
+}

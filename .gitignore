@@ -5,5 +5,4 @@ __pycache__/
 *.pyo
 vit_best_model.pth
 dataset/
-outputs/
 /models

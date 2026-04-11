@@ -1,0 +1,23 @@
+{
+    "model_name": "BiLSTM_Attention",
+    "class_names": [
+        "Benign",
+        "Analysis",
+        "Backdoor",
+        "DoS",
+        "Exploits",
+        "Fuzzers",
+        "Generic",
+        "Reconnaissance",
+        "Shellcode",
+        "Worms"
+    ],
+    "input_shape": null,
+    "num_classes": 10,
+    "training_date": "2026-02-19 05:19:42",
+    "metrics": {
+        "accuracy": 0.8908386635857249,
+        "f1_macro": 0.3731846253588357,
+        "f1_weighted": 0.8949888314797108
+    }
+}
