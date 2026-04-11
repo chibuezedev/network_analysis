@@ -1,18 +1,22 @@
+import os
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+import json
+import logging
+from datetime import datetime
+from typing import Dict, List, Optional
+
+import numpy as np
+import tensorflow as tf
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional
-import numpy as np
-import tensorflow as tf
-import json
-from datetime import datetime
-import logging
 
-
-MODEL_PATH = "./outputs/production_model.h5"
-PREPROCESSOR_PATH = "./outputs/preprocessors/preprocessor.pkl"
-METADATA_PATH = "./outputs/model_metadata.json"
+MODEL_PATH = "../outputs/production_model.h5"
+PREPROCESSOR_PATH = "../outputs/preprocessors/preprocessor.pkl"
+METADATA_PATH = "../outputs/model_metadata.json"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -408,6 +412,139 @@ async def get_classes():
             "Worms": "Worm propagation",
         },
     }
+
+
+@app.post("/debug-predict")
+async def debug_predict(traffic: NetworkTraffic):
+    features_arr = np.array([traffic.features])
+    features_processed = model_server.preprocess_features(features_arr)
+    result = model_server.predict(features_processed)
+    return {
+        "raw_input": traffic.features[:10],
+        "processed_sample": features_processed[0][:10].tolist(),
+        "result": result,
+    }
+
+
+@app.get("/inject-attack")
+def inject_attack_get(
+    attack: str = "dos", src_ip: str = "172.20.10.5", mac: str = "unknown"
+):
+    features = _craft_features(attack)
+    result = _classify(features)
+    prediction = result.get("prediction", "Unknown")
+    confidence = result.get("confidence", 0.0)
+
+    if prediction != "Benign" and confidence >= 0.20:
+        try:
+            import requests as req
+
+            req.post(
+                "http://127.0.0.1:8001",
+                json={
+                    "src_ip": src_ip,
+                    "mac": mac,
+                    "prediction": prediction,
+                    "confidence": confidence,
+                },
+                timeout=2,
+            )
+        except Exception as e:
+            print(f"Webhook failed: {e}")
+
+    return {"prediction": prediction, "confidence": confidence, "src_ip": src_ip}
+
+
+def _classify(features):
+    import numpy as np
+
+    features_arr = np.array(features).reshape(1, -1)
+    features_processed = model_server.preprocess_features(features_arr)
+    result = model_server.predict(features_processed)
+    return {"prediction": result["prediction"], "confidence": result["confidence"]}
+
+
+def _craft_features(attack: str) -> list:
+    f = [0.0] * 76
+
+    if attack == "dos":
+        f[0] = 0.01  # very short duration (normalized)
+        f[1] = 0.95  # fwd_packets — max
+        f[2] = 0.01  # bwd_packets — near zero
+        f[3] = 0.95  # fwd_bytes — max
+        f[4] = 0.01  # bwd_bytes — near zero
+        f[5] = 0.90  # fwd pkt max
+        f[6] = 0.80  # fwd pkt min
+        f[7] = 0.85  # fwd pkt mean
+        f[13] = 0.99  # bytes/sec — extreme
+        f[14] = 0.99  # pkts/sec — extreme
+        f[25] = 0.90  # FIN flags
+        f[29] = 0.90  # ACK flags
+        f[41] = 0.99  # fwd pkt rate
+        f[42] = 0.01  # bwd pkt rate
+
+    elif attack == "recon":
+        f[0] = 0.50
+        f[1] = 0.99
+        f[2] = 0.0
+        f[3] = 0.30
+        f[4] = 0.0
+        f[5] = 0.05
+        f[6] = 0.05
+        f[7] = 0.05
+        f[14] = 0.80
+        f[26] = 0.99  # SYN flags
+        f[41] = 0.80
+
+    elif attack == "fuzzer":
+        f[0] = 0.30
+        f[1] = 0.60
+        f[2] = 0.20
+        f[3] = 0.90
+        f[4] = 0.10
+        f[5] = 0.99
+        f[6] = 0.01
+        f[7] = 0.70
+        f[8] = 0.95  # high std — irregular sizes
+        f[13] = 0.75
+        f[47] = 0.99  # variance — max
+
+    elif attack == "backdoor":
+        f[0] = 0.90  # long duration
+        f[1] = 0.20
+        f[2] = 0.20
+        f[3] = 0.15
+        f[4] = 0.15
+        f[15] = 0.85  # IAT mean — high (slow beaconing)
+        f[16] = 0.05  # IAT std — low (regular)
+        f[20] = 0.85
+        f[64] = 0.85
+        f[68] = 0.85
+
+    elif attack == "shellcode":
+        f[0] = 0.10
+        f[1] = 0.30
+        f[2] = 0.10
+        f[3] = 0.40
+        f[4] = 0.10
+        f[5] = 0.50
+        f[7] = 0.40
+        f[13] = 0.60
+        f[26] = 0.70  # SYN
+        f[28] = 0.80  # RST — abnormal
+        f[62] = 0.99  # max window
+
+    elif attack == "generic":
+        f[0] = 0.25
+        f[1] = 0.65
+        f[2] = 0.25
+        f[3] = 0.55
+        f[4] = 0.30
+        f[13] = 0.60
+        f[14] = 0.45
+        f[47] = 0.75
+
+    return f
 
 
 @app.exception_handler(Exception)
