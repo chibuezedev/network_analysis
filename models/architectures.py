@@ -6,7 +6,11 @@ multiple SOTA architectures with regularization to prevent overfitting
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers, models, regularizers  # type: ignore
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint  # type: ignore
+from tensorflow.keras.callbacks import (  # type: ignore
+    EarlyStopping,
+    ModelCheckpoint,
+    ReduceLROnPlateau,
+)
 
 
 class IDSArchitectures:

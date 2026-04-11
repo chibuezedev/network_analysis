@@ -6,3 +6,4 @@ __pycache__/
 vit_best_model.pth
 dataset/
 outputs/
+/models
