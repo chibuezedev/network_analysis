@@ -103,6 +103,7 @@ class RealCapture:
         self.ARP_ANALYZE_INTERVAL = 15
         self.ARP_COOLDOWN = 60
         self._analyzed_flows: set = set()
+        self._dhcp_hostnames: Dict[str, str] = {}
 
     def start(self):
         self._running = True
@@ -146,9 +147,11 @@ class RealCapture:
 
             if DHCP not in pkt:
                 return
-            opts = dict(pkt[DHCP].options) if hasattr(pkt[DHCP], "options") else {}  # noqa: F841
             msg_type = None
+            hostname = ""
             for opt in pkt[DHCP].options:
+                if isinstance(opt, tuple) and opt[0] == "hostname":
+                    hostname = opt[1].decode(errors="ignore").strip()
                 if isinstance(opt, tuple) and opt[0] == "message-type":
                     msg_type = opt[1]
             if msg_type not in (2, 5):
@@ -156,8 +159,10 @@ class RealCapture:
             ip = pkt[BOOTP].yiaddr
             mac = pkt[Ether].src.lower()
             if ip and ip != "0.0.0.0" and mac != "ff:ff:ff:ff:ff:ff":
-                logger.info(f"DHCP: assigned {ip} to {mac}")
+                logger.info(f"DHCP: assigned {ip} to {mac} hostname={hostname}")
                 self._mac_table[ip] = mac
+                if hostname:
+                    self._dhcp_hostnames[ip] = hostname
                 self._arp_devices[ip] = time.time()
                 self.on_device(ip, mac)
         except Exception as e:
@@ -506,6 +511,11 @@ class MonitorService:
         self._running = False
         self._stats = {"packets": 0, "flows": 0, "alerts": 0}
         self._stats_lock = threading.Lock()
+        self._device_last_seen: Dict[str, float] = {}
+        self.DEVICE_TIMEOUT: int = 60
+        self._hostname_cache: Dict[str, str] = {}
+        self._mac_parser = None
+        self._hostname_attempted: set = set()
 
         self.on_device_update: Optional[Callable] = None
         self.on_alert_update: Optional[Callable] = None
@@ -532,12 +542,16 @@ class MonitorService:
                     self._handle_device, self._handle_alert
                 )
         self._capture.start()
+        threading.Thread(target=self._watch_disconnections, daemon=True).start()
         logger.info("MonitorService started")
 
     def stop(self):
         if not self._running:
             return
         self._running = False
+        self._device_last_seen.clear()
+        self._hostname_cache.clear()
+        self._hostname_attempted.clear()
         if self._capture:
             self._capture.stop()
         logger.info("MonitorService stopped")
@@ -547,6 +561,7 @@ class MonitorService:
         return self._running
 
     def _handle_device(self, ip: str, mac: str):
+        self._device_last_seen[ip] = time.time()
         with self._stats_lock:
             self._stats["packets"] += 1
 
@@ -556,12 +571,26 @@ class MonitorService:
                 if entry["ip"] == ip and entry["mac"] not in ("unknown", ""):
                     mac = entry["mac"]
                     break
+
         status = None
         if self.db.is_blocked(ip):
             status = "Blocked"
         elif self.db.is_whitelisted(ip):
             status = "Whitelisted"
-        self.db.upsert_device(ip, mac, status)
+
+        dhcp_name = ""
+        if isinstance(self._capture, RealCapture):
+            dhcp_name = self._capture._dhcp_hostnames.get(ip, "")
+        hostname = dhcp_name or self._hostname_cache.get(ip, "")
+
+        self.db.upsert_device(ip, mac, status, hostname)
+
+        if ip not in self._hostname_cache and ip not in self._hostname_attempted:
+            self._hostname_attempted.add(ip)
+            threading.Thread(
+                target=self._resolve_and_store, args=(ip, mac), daemon=True
+            ).start()
+
         if self.on_device_update:
             self.on_device_update()
         if self.on_stats_update:
@@ -645,3 +674,47 @@ class MonitorService:
                 )
             except Exception as e:
                 logger.warning(f"Firewall unblock failed: {e}")
+
+    def _watch_disconnections(self):
+        while self._running:
+            now = time.time()
+            for ip, last_seen in list(self._device_last_seen.items()):
+                if now - last_seen < self.DEVICE_TIMEOUT:
+                    continue
+                if self.db.is_whitelisted(ip) or self.db.is_blocked(ip):
+                    self._device_last_seen.pop(ip, None)
+                    continue
+                self._device_last_seen.pop(ip, None)
+                self.db.delete_device(ip)
+                logger.info(f"Device {ip} disconnected — removed from DB")
+                if self.on_device_update:
+                    self.on_device_update()
+            time.sleep(10)
+
+    def _resolve_and_store(self, ip: str, mac: str):
+        """Runs in background — never blocks packet handling."""
+        hostname = self._resolve_hostname(ip, mac)
+        if hostname:
+            self._hostname_cache[ip] = hostname
+            self.db.update_device_hostname(ip, hostname)
+
+    def _resolve_hostname(self, ip: str, mac: str = "") -> str:
+        try:
+            name = socket.gethostbyaddr(ip)[0]
+            if name and name != ip:
+                return name.split(".")[0]
+        except Exception:
+            pass
+        if mac and mac != "unknown":
+            return self._mac_vendor(mac)
+        return ""
+
+    def _mac_vendor(self, mac: str) -> str:
+        try:
+            from manuf import manuf
+
+            if self._mac_parser is None:
+                self._mac_parser = manuf.MacParser()
+            return self._mac_parser.get_manuf(mac) or ""
+        except Exception:
+            return ""

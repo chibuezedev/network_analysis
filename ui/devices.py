@@ -60,9 +60,9 @@ class DevicesPanel(ttk.Frame):
         e.pack(side="left", padx=6)
 
         # Table
-        cols = ("ip", "mac", "status", "last_seen")
-        heads = ("IP Address", "MAC Address", "Status", "Last Seen")
-        widths = {"ip": 140, "mac": 160, "status": 110, "last_seen": 160}
+        cols = ("ip", "mac", "hostname", "status", "last_seen")
+        heads = ("IP Address", "MAC Address", "Device Name", "Status", "Last Seen")
+        widths = {"ip": 130, "mac": 150, "hostname": 160, "status": 100, "last_seen": 150}
         _, self._tree = make_scrolled_tree(self, cols, heads, widths)
 
         # Context-menu via right-click
@@ -119,7 +119,7 @@ class DevicesPanel(ttk.Frame):
             iid = self._tree.insert(
                 "",
                 "end",
-                values=(d["ip"], d["mac"], d["status"], d["last_seen"]),
+                values=(d["ip"], d["mac"], d.get("hostname", ""), d["status"], d["last_seen"]),
                 tags=(tag,),
             )
             if d["ip"] == sel_ip:
@@ -128,7 +128,6 @@ class DevicesPanel(ttk.Frame):
 
         self._count_var.set(f"{len(devices)} device(s)")
 
-    # ------------------------------------------------------------------ #
 
     def _selected_device(self):
         sel = self._tree.focus()

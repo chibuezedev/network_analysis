@@ -33,6 +33,7 @@ class Database:
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             ip          TEXT NOT NULL UNIQUE,
             mac         TEXT NOT NULL,
+            hostname      TEXT DEFAULT '',
             status      TEXT DEFAULT 'Unknown',   -- Whitelisted | Unknown | Blocked
             first_seen  TEXT NOT NULL,
             last_seen   TEXT NOT NULL
@@ -67,28 +68,46 @@ class Database:
         with self._lock:
             conn = self._connect()
             conn.executescript(ddl)
+            try:
+                conn.execute("ALTER TABLE devices ADD COLUMN hostname TEXT DEFAULT ''")
+                conn.commit()
+            except Exception:
+                pass
             conn.commit()
             conn.close()
 
-    def upsert_device(self, ip: str, mac: str, status: str = None):
+    def upsert_device(
+        self, ip: str, mac: str, status: str = None, hostname: str = None
+    ):
         now = datetime.now().isoformat(sep=" ", timespec="seconds")
         with self._lock:
             conn = self._connect()
             existing = conn.execute(
-                "SELECT status FROM devices WHERE ip=?", (ip,)
+                "SELECT status, hostname FROM devices WHERE ip=?", (ip,)
             ).fetchone()
             if existing:
                 new_status = status if status else existing["status"]
+                new_hostname = hostname if hostname else existing["hostname"]
                 conn.execute(
-                    "UPDATE devices SET mac=?, status=?, last_seen=? WHERE ip=?",
-                    (mac, new_status, now, ip),
+                    "UPDATE devices SET mac=?, status=?, hostname=?, last_seen=? WHERE ip=?",
+                    (mac, new_status, new_hostname, now, ip),
                 )
             else:
                 new_status = status if status else "Unknown"
                 conn.execute(
-                    "INSERT INTO devices (ip, mac, status, first_seen, last_seen) VALUES (?,?,?,?,?)",
-                    (ip, mac, new_status, now, now),
+                    "INSERT INTO devices (ip, mac, hostname, status, first_seen, last_seen) VALUES (?,?,?,?,?,?)",
+                    (ip, mac, hostname or "", new_status, now, now),
                 )
+            conn.commit()
+            conn.close()
+
+    def update_device_hostname(self, ip: str, hostname: str):
+        with self._lock:
+            conn = self._connect()
+            conn.execute(
+                "UPDATE devices SET hostname=? WHERE ip=? AND (hostname='' OR hostname IS NULL)",
+                (hostname, ip),
+            )
             conn.commit()
             conn.close()
 
@@ -96,7 +115,7 @@ class Database:
         with self._lock:
             conn = self._connect()
             rows = conn.execute(
-                "SELECT ip, mac, status, last_seen FROM devices ORDER BY last_seen DESC"
+                "SELECT ip, mac, hostname, status, last_seen FROM devices ORDER BY last_seen DESC"
             ).fetchall()
             conn.close()
         return [dict(r) for r in rows]
@@ -249,3 +268,19 @@ class Database:
             "alerts": alerts,
             "blocked": blocked,
         }
+
+    def delete_device(self, ip: str):
+        with self._lock:
+            conn = self._connect()
+            conn.execute("DELETE FROM devices WHERE ip=?", (ip,))
+            conn.commit()
+            conn.close()
+
+    def get_devices(self, ip: str) -> Dict:
+        with self._lock:
+            conn = self._connect()
+            row = conn.execute(
+                "SELECT ip, mac, hostname, status FROM devices WHERE ip=?", (ip,)
+            ).fetchone()
+            conn.close()
+        return dict(row) if row else None
